@@ -19,19 +19,20 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.model.dstu2.composite.ElementDefinitionDt;
 import ca.uhn.fhir.model.dstu2.resource.StructureDefinition;
 import ca.uhn.fhir.parser.IParser;
+import org.apache.commons.io.IOUtils;
 
-import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.io.InputStream;
+import java.net.URL;
 
-public class FileStructureDefinitionProvider implements StructureDefinitionProvider {
+public class UrlStructureDefinitionProvider implements StructureDefinitionProvider {
     private final FhirContext context;
     private final String outPackage;
-    private final File structureFile;
+    private final String structureUrl;
 
-    public FileStructureDefinitionProvider(String outPackage, File structureFile) {
+    public UrlStructureDefinitionProvider(String outPackage, String structureUrl) {
         this.outPackage = outPackage;
-        this.structureFile = structureFile;
+        this.structureUrl = structureUrl;
         context = FhirContext.forDstu2();
     }
 
@@ -42,21 +43,20 @@ public class FileStructureDefinitionProvider implements StructureDefinitionProvi
     @Override
     public StructureDefinition getDefinition() throws IOException {
         IParser parser = context.newXmlParser();
-        return parser.parseResource(StructureDefinition.class, fileToContentString(structureFile));
+        return parser.parseResource(StructureDefinition.class, urlToContentString(new URL(structureUrl)));
     }
 
     @Override
     public StructureDefinition provideReferenceDefinition(ElementDefinitionDt element) throws IOException {
-        String fileStr = element.getTypeFirstRep().getProfileFirstRep().getValue().substring(element.getTypeFirstRep().getProfileFirstRep().getValue().lastIndexOf('/') + 1) + ".xml";
-        File file = new File("E:/FHIR/" + fileStr);
-        if (!file.isFile()) {
-            return null;
-        }
+        String urlStr = element.getTypeFirstRep().getProfileFirstRep().getValue();
+        URL url = new URL(urlStr);
         IParser parser = context.newXmlParser();
-        return parser.parseResource(StructureDefinition.class, fileToContentString(file));
+        return parser.parseResource(StructureDefinition.class, urlToContentString(url));
     }
 
-    private String fileToContentString(File file) throws IOException {
-        return new String(Files.readAllBytes(file.toPath()), "UTF-8");
+    private String urlToContentString(URL url) throws IOException {
+        try (InputStream in = url.openStream()) {
+            return new String(IOUtils.toByteArray(in), "UTF-8");
+        }
     }
 }

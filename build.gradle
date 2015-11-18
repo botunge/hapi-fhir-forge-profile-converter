@@ -21,6 +21,7 @@ dependencies {
     compile 'org.reflections:reflections:0.9.10'
     compile 'org.apache.commons:commons-lang3:3.0'
     compile 'com.google.guava:guava:18.0'
+    compile 'commons-io:commons-io:2.4'
 
 }
 
