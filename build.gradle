@@ -1,0 +1,39 @@
+group 'Test'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'groovy'
+apply plugin: 'java'
+
+sourceCompatibility = 1.5
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'org.codehaus.groovy:groovy-all:2.3.11'
+    compile 'ca.uhn.hapi.fhir:hapi-fhir-base:1.3'
+    compile 'ca.uhn.hapi.fhir:hapi-fhir-structures-dstu2:1.3'
+    testCompile group: 'junit', name: 'junit', version: '4.11'
+
+    compile 'org.jboss.forge.roaster:roaster-api:+'
+    compile 'org.jboss.forge.roaster:roaster-jdt:+'
+    compile 'org.reflections:reflections:0.9.10'
+    compile 'org.apache.commons:commons-lang3:3.0'
+    compile 'com.google.guava:guava:18.0'
+
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir 'dstu2/src/main/java'
+        }
+    }
+	test {
+		java {
+		    srcDir 'dstu2/src/test/java'
+		}
+	}
+
+}
