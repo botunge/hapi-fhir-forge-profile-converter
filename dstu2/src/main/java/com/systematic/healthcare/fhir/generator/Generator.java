@@ -15,7 +15,6 @@
  */
 package com.systematic.healthcare.fhir.generator;
 
-import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.model.api.annotation.Child;
 import ca.uhn.fhir.model.api.annotation.Description;
 import ca.uhn.fhir.model.api.annotation.Extension;
@@ -25,7 +24,6 @@ import ca.uhn.fhir.model.dstu2.composite.ElementDefinitionDt;
 import ca.uhn.fhir.model.dstu2.composite.ResourceReferenceDt;
 import ca.uhn.fhir.model.dstu2.resource.StructureDefinition;
 import ca.uhn.fhir.model.primitive.BoundCodeDt;
-import ca.uhn.fhir.parser.IParser;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.FluentIterable;
@@ -34,13 +32,12 @@ import org.jboss.forge.roaster.Roaster;
 import org.jboss.forge.roaster.model.source.AnnotationSource;
 import org.jboss.forge.roaster.model.source.FieldSource;
 import org.jboss.forge.roaster.model.source.JavaClassSource;
+import org.jboss.forge.roaster.model.source.JavaEnumSource;
 
 import javax.annotation.Nullable;
-import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
-import java.nio.file.Files;
 import java.util.*;
 
 import static org.reflections.ReflectionUtils.getAllFields;
@@ -52,14 +49,13 @@ public class Generator {
     private static final String DSTU2_RESOURCE_PACKAGE = DSTU2_PACKAGE + ".resource";
     private static final String DSTU2_COMPOSITE_PACKAGE = DSTU2_PACKAGE + ".composite";
     private static final String DSTU2_PRIMITIVE_PACKAGE = "ca.uhn.fhir.model.primitive";
+    public static final String HL7_FHIR_REFERENCE_URL_START = "http://hl7.org/fhir";
 
-    public String convertDefinitionToJavaFile(String outPackage, String structureDefString) throws Exception {
-        IParser parser = FhirContext.forDstu2().newXmlParser();
-        StructureDefinition def = parser.parseResource(StructureDefinition.class, structureDefString);
-
+    public String convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
+        StructureDefinition def = resolver.getDefinition();
         final JavaClassSource javaClass = Roaster.create(JavaClassSource.class);
         Class classType = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
-        javaClass.setPackage(outPackage).setName(def.getName().replace(" ", "")).extendSuperType(classType);
+        javaClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(def.getName())).extendSuperType(classType);
         addClassResourceDefAnnotation(def, javaClass);
 
         Set<Field> fields = getAllFields(classType, withAnnotation(Child.class));
@@ -78,23 +74,44 @@ public class Generator {
                     name = name.substring(0, name.indexOf("[x]"));
                 }
                 if (name.equals("extension")) {
-                    addExtensionField(javaClass, element);
+                    addExtensionField(javaClass, element, resolver);
                 } else {
                     addField(javaClass, nameToField, element, name);
                 }
-
             }
+        }
+        for (Map.Entry<String, List<CompositeValue>> i : sliceToValues.entrySet()) {
+            final JavaEnumSource enumClass = Roaster.create(JavaEnumSource.class);
+            String enumName = slicedToEnumType.get(i.getKey());
+            enumClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(enumName) + "Enum");
+            for (CompositeValue value : i.getValue()) {
+                enumClass.addEnumConstant().setName(convertNameToValidJavaIdentifier(value.type).toUpperCase());
+            }
+            javaClass.addNestedType(enumClass);
         }
         return javaClass.toString();
     }
 
+    private String convertNameToValidJavaIdentifier(String enumName) {
+        return enumName.replaceAll("[ \\.\\?]", "");
+    }
+
     private Set<String> sliced = new HashSet<>();
+    private Map<String, String> slicedToEnumType = new HashMap<>();
+    private Map<String, List<CompositeValue>> sliceToValues = new HashMap<>();
+
     private void addField(JavaClassSource javaClass, Map<String, Field> nameToField, ElementDefinitionDt element, String name) {
 
         if (!element.getSlicing().getDiscriminator().isEmpty()) {
             sliced.add(element.getPath());
+            slicedToEnumType.put(element.getPath(), element.getShort());
         } else if (sliced.contains(element.getPath())) {
-            System.out.println(element.getName());
+            List<CompositeValue> sliceList = sliceToValues.get(element.getPath());
+            if (sliceList == null) {
+                sliceList = new ArrayList<>();
+                sliceToValues.put(element.getPath(), sliceList);
+            }
+            sliceList.add(new CompositeValue(element.getName(), "some url"));
             return;
         }
 
@@ -111,7 +128,7 @@ public class Generator {
         } else {
             if (element.getBinding() != null && isStrengthNotExample(element.getBinding()) && element.getBinding().getValueSet() instanceof ResourceReferenceDt) {
                 ResourceReferenceDt ref = (ResourceReferenceDt) element.getBinding().getValueSet();
-                if (ref.getReference().getValue().startsWith("http://hl7.org/fhir")) {
+                if (ref.getReference().getValue().startsWith(HL7_FHIR_REFERENCE_URL_START)) {
                     if (BoundCodeableConceptDt.class.isAssignableFrom(originalField.getType())) {
                         setFieldTypeGeneric(javaClass, originalField, field);
                     } else if (BoundCodeDt.class.isAssignableFrom(originalField.getType())) {
@@ -147,25 +164,24 @@ public class Generator {
         javaClass.addAnnotation(ResourceDef.class).setStringValue("name", def.getConstrainedType()).setStringValue("id", def.getName());
     }
 
-    private void addExtensionField(JavaClassSource javaClass, ElementDefinitionDt element) throws Exception {
+    private void addExtensionField(JavaClassSource javaClass, ElementDefinitionDt element, StructureDefinitionProvider resolver) throws Exception {
         if (element.getType().size() > 1) {
             throw new IllegalStateException("WTF");
         } else {
             if (element.getName() == null) {
                 return;
             }
-            Class extensionType = getExtensionType(element);
+            FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(element.getName()));
 
-            FieldSource<JavaClassSource> field = javaClass.addField()
-                    .setName("my" + StringUtils.capitalize(element.getName()));
-
+            Class extensionType = getExtensionType(element, resolver);
             if (extensionType != null) {
                 field.setType(extensionType);
             } else {
                 field.setType(Roaster.parse("public class " + StringUtils.capitalize(element.getName()) + " {}"));
+                String errMsg = "Replace " + StringUtils.capitalize(element.getName()) + ".class with correct extension type";
+                field.getJavaDoc().addTagValue("TODO:", errMsg);
+                field.getJavaDoc().addTagValue("@deprecated", errMsg);
             }
-            field.getJavaDoc().addTagValue("TODO:", "Replace Void.class with correct extension type");
-            field.getJavaDoc().addTagValue("@deprecated", "Replace Void.class with correct extension type");
             field.addAnnotation(Extension.class)
                     .setLiteralValue("definedLocally", "false")
                     .setLiteralValue("isModifier", "false")
@@ -175,11 +191,8 @@ public class Generator {
         }
     }
 
-    private Class getExtensionType(ElementDefinitionDt element) throws IOException {
-        String file = element.getTypeFirstRep().getProfileFirstRep().getValue().substring(element.getTypeFirstRep().getProfileFirstRep().getValue().lastIndexOf('/') + 1) + ".xml";
-        IParser parser = FhirContext.forDstu2().newXmlParser();
-        String lines = new String(Files.readAllBytes(new File("E:/FHIR/" + file).toPath()), "UTF-8");
-        StructureDefinition def = parser.parseResource(StructureDefinition.class, lines);
+    private Class getExtensionType(ElementDefinitionDt element, StructureDefinitionProvider resolver) throws IOException {
+        StructureDefinition def = resolver.provideReferenceDefinition(element);
         for (ElementDefinitionDt el : def.getDifferential().getElement()) {
             if (el.getPath().equals("Extension.value[x]")) {
                 return getClassFromType(el.getTypeFirstRep(), null);
@@ -260,4 +273,15 @@ public class Generator {
             return input.getSimpleName();
         }
     }
+
+    private static class CompositeValue {
+        public String type;
+        public String url;
+
+        public CompositeValue(String type, String url) {
+            this.type = type;
+            this.url = url;
+        }
+    }
+
 }

@@ -15,18 +15,15 @@
  */
 package com.systematic.healthcare.fhir.generator;
 
-import java.io.File;
-import java.nio.file.Files;
+import ca.uhn.fhir.model.dstu2.composite.ElementDefinitionDt;
+import ca.uhn.fhir.model.dstu2.resource.StructureDefinition;
 
-public class Main {
+import java.io.IOException;
 
-    public static void main(String [] args) throws Exception {
-        Generator gen = new Generator();
-        StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
-                "com.systematic.healthcare.fhir.generator.example",
-                new File("E:/FHIR/Cura General Assessments Profile.xml"));
-        String javaClass = gen.convertDefinitionToJavaFile(provider);
-        System.out.println(javaClass);
-        Files.write(new File(".\\example\\CuraGeneralAssessmentProfile.java").toPath(), javaClass.getBytes("UTF-8"));
-    }
+public interface StructureDefinitionProvider {
+    String getOutPackage();
+
+    StructureDefinition getDefinition() throws IOException;
+
+    StructureDefinition provideReferenceDefinition(ElementDefinitionDt element) throws IOException;
 }
