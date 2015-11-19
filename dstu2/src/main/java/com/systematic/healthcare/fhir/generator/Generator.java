@@ -24,15 +24,15 @@ import ca.uhn.fhir.model.dstu2.composite.ElementDefinitionDt;
 import ca.uhn.fhir.model.dstu2.composite.ResourceReferenceDt;
 import ca.uhn.fhir.model.dstu2.resource.StructureDefinition;
 import ca.uhn.fhir.model.primitive.BoundCodeDt;
+import ca.uhn.fhir.model.primitive.UriDt;
+import ca.uhn.fhir.util.ElementUtil;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.FluentIterable;
 import org.apache.commons.lang3.StringUtils;
 import org.jboss.forge.roaster.Roaster;
-import org.jboss.forge.roaster.model.source.AnnotationSource;
-import org.jboss.forge.roaster.model.source.FieldSource;
-import org.jboss.forge.roaster.model.source.JavaClassSource;
-import org.jboss.forge.roaster.model.source.JavaEnumSource;
+import org.jboss.forge.roaster.model.Type;
+import org.jboss.forge.roaster.model.source.*;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -68,84 +68,155 @@ public class Generator {
         StructureDefinition.Differential dif = def.getDifferential();
         List<ElementDefinitionDt> elements = dif.getElement();
         for (ElementDefinitionDt element : elements) {
-            if (element.getPath().indexOf('.') == element.getPath().lastIndexOf('.') && element.getPath().indexOf('.') != -1) {
-                String name = element.getPath().substring(def.getConstrainedType().length() + 1);
-                if (name.endsWith("[x]")) {
-                    name = name.substring(0, name.indexOf("[x]"));
+            if (element.getPath().indexOf('.') != -1) {
+                //Element name is (path minus the constrained name). E.g. Path for field Subject on Observations is Observation.subject, which we resolve to subject
+                String elementName = element.getPath().substring(def.getConstrainedType().length() + 1);
+                if (elementName.endsWith("[x]")) {
+                    elementName = elementName.substring(0, elementName.indexOf("[x]"));
                 }
-                if (name.equals("extension")) {
+                if (elementName.equals("extension")) {
                     addExtensionField(javaClass, element, resolver);
                 } else {
-                    addField(javaClass, nameToField, element, name);
+                    addField(javaClass, nameToField, element, elementName);
                 }
             }
         }
-        for (Map.Entry<String, List<CompositeValue>> i : sliceToValues.entrySet()) {
-            final JavaEnumSource enumClass = Roaster.create(JavaEnumSource.class);
-            String enumName = slicedToEnumType.get(i.getKey());
-            enumClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(enumName) + "Enum");
-            for (CompositeValue value : i.getValue()) {
-                enumClass.addEnumConstant().setName(convertNameToValidJavaIdentifier(value.type).toUpperCase());
-            }
-            javaClass.addNestedType(enumClass);
-        }
+        addSliceFields(resolver, javaClass);
+        addIsEmptyMethod(javaClass, fieldsAdded);
+        addSettersAndGettersForFields(javaClass);
         return javaClass.toString();
     }
 
+    private void addSettersAndGettersForFields(JavaClassSource javaClass) {
+        for (FieldSource<JavaClassSource> i : fieldsAdded) {
+            String fieldName = StringUtils.capitalize(i.getName().substring(2)); // Remove my
+            String type = i.getType().getName();
+            String genericTypes = Joiner.on(',').join(FluentIterable.from(i.getType().getTypeArguments()).transform(new Function<Type<JavaClassSource>, String>() {
+                @Nullable
+                @Override
+                public String apply(@Nullable Type<JavaClassSource> input) {
+                    return input.getName();
+                }
+            }));
+            String getFieldName = fieldName;
+            if (getFieldName.equals("Comments")) {
+                getFieldName = "CommentsElement";
+            }
+            String bodyGet = "return "+i.getName()+";";
+            if (i.getType().isType(List.class)) {
+                bodyGet = "if ("+i.getName()+" == null) {\n" +
+                        "   "+i.getName() +" = new java.util.ArrayList<>();\n" +
+                        "}\n" +
+                        bodyGet;
+
+                type = type + "<"+genericTypes+">";
+            }
+            MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get"+getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
+            methodGet.addAnnotation(Override.class);
+
+            String bodySet = i.getName() + " = theValue;\nreturn this;";
+            MethodSource<JavaClassSource> methodSet = javaClass.addMethod().setName("set"+fieldName).setPublic()
+                    .setReturnType(javaClass.getName()).setBody(bodySet);
+            methodSet.addParameter(type, "theValue");
+            methodSet.addAnnotation(Override.class);
+        }
+    }
+
+    private void addIsEmptyMethod(JavaClassSource javaClass, List<FieldSource<JavaClassSource>> fieldsAdded) {
+        String types = Joiner.on(',').join(FluentIterable.from(fieldsAdded).transform(new FieldSourceGetNameFunction()));
+        String body = "return super.isEmpty() && ElementUtil.isEmpty(" + types + ");";
+        MethodSource<JavaClassSource> method = javaClass.addMethod().setName("isEmpty").setPublic().setReturnType("boolean").setBody(body);
+        method.addAnnotation(Override.class);
+        javaClass.addImport(ElementUtil.class);
+    }
+
+    private void addSliceFields(StructureDefinitionProvider resolver, JavaClassSource javaClass) {
+        for (Map.Entry<String, CompositeValue> i : slicePathToValues.entrySet()) {
+            final JavaEnumSource enumClass = Roaster.create(JavaEnumSource.class);
+            String enumName = slicedPathToEnumType.get(i.getKey());
+            enumClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(enumName) + "Type");
+            for (CompositeValueField value : i.getValue().getFields()) {
+                enumClass.addEnumConstant().setName(convertNameToValidJavaIdentifier(value.name).toUpperCase());
+                System.out.println(value.fixedCode + " " + value.name + " " + value.type + " " + value.url);
+            }
+            javaClass.addNestedType(enumClass);
+        }
+    }
+
     private String convertNameToValidJavaIdentifier(String enumName) {
+        StringBuilder b = new StringBuilder();
+        for (String part : enumName.split("[ ]")) {
+            b.append(StringUtils.capitalize(part));
+        }
         return enumName.replaceAll("[ \\.\\?]", "");
     }
 
     private Set<String> sliced = new HashSet<>();
-    private Map<String, String> slicedToEnumType = new HashMap<>();
-    private Map<String, List<CompositeValue>> sliceToValues = new HashMap<>();
+    private Map<String, String> slicedPathToEnumType = new HashMap<>();
+    private Map<String, CompositeValue> slicePathToValues = new HashMap<>();
+    private CompositeValue lastSlicedValue = null;
+    private CompositeValueField lastSlicedValueField = null;
+    private List<FieldSource<JavaClassSource>> fieldsAdded = new ArrayList<>();
 
-    private void addField(JavaClassSource javaClass, Map<String, Field> nameToField, ElementDefinitionDt element, String name) {
-
+    private void addField(JavaClassSource javaClass, Map<String, Field> elementNameToInheritedField, ElementDefinitionDt element, String elementName) {
         if (!element.getSlicing().getDiscriminator().isEmpty()) {
             sliced.add(element.getPath());
-            slicedToEnumType.put(element.getPath(), element.getShort());
-        } else if (sliced.contains(element.getPath())) {
-            List<CompositeValue> sliceList = sliceToValues.get(element.getPath());
-            if (sliceList == null) {
-                sliceList = new ArrayList<>();
-                sliceToValues.put(element.getPath(), sliceList);
+            slicedPathToEnumType.put(element.getPath(), element.getShort());
+            lastSlicedValue = new CompositeValue(element.getPath(), element.getSlicing().getDescription());
+            slicePathToValues.put(element.getPath(), lastSlicedValue);
+        } else {
+            // The ElementDefinition is part of the last slice.
+            if (lastSlicedValue != null && element.getPath().startsWith(lastSlicedValue.path)) {
+                if (element.getPath().equals(lastSlicedValue.path)) {
+                    // This defines the name of slice.
+                    lastSlicedValueField = new CompositeValueField(element.getName());
+                    lastSlicedValue.fields.add(lastSlicedValueField);
+                } else if (element.getPath().equals(lastSlicedValue.path + ".code.coding.system")) {
+                    lastSlicedValueField.url = ((UriDt) element.getFixed()).getValue();
+                } else if (element.getPath().equals(lastSlicedValue.path + ".code.coding.code")) {
+                    lastSlicedValueField.fixedCode = String.valueOf(element.getFixed());
+                } else if (element.getPath().equals(lastSlicedValue.path + ".value[x]")) {
+                    lastSlicedValueField.type = String.valueOf(element.getFixed());
+                }
+                return;
+            } else if (elementName.indexOf('.') != -1) {
+                //Dont know why we need theese sub elements. (.code and .code.system etc..)
+                return;
             }
-            sliceList.add(new CompositeValue(element.getName(), "some url"));
-            return;
         }
 
-        Field originalField = nameToField.get(name);
-        FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(name));
-        if (Collection.class.isAssignableFrom(originalField.getType())) {
-            List<Class> cl = FluentIterable.from(element.getType()).transform(new TypeClassFunction(originalField)).toList();
+        Field inheritedField = elementNameToInheritedField.get(elementName);
+        FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(elementName));
+        fieldsAdded.add(field);
+        if (Collection.class.isAssignableFrom(inheritedField.getType())) {
+            List<Class> cl = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
             if (cl.size() == 0) {
-                setFieldTypeGeneric(javaClass, originalField, field);
+                setFieldTypeGeneric(javaClass, inheritedField, field);
             } else {
                 String args = Joiner.on(',').join(FluentIterable.from(cl).transform(new ClassToSimpleNameFunction()));
-                field.setType(originalField.getType().getCanonicalName() + "<" + args + ">");
+                field.setType(inheritedField.getType().getCanonicalName() + "<" + args + ">");
             }
         } else {
             if (element.getBinding() != null && isStrengthNotExample(element.getBinding()) && element.getBinding().getValueSet() instanceof ResourceReferenceDt) {
                 ResourceReferenceDt ref = (ResourceReferenceDt) element.getBinding().getValueSet();
                 if (ref.getReference().getValue().startsWith(HL7_FHIR_REFERENCE_URL_START)) {
-                    if (BoundCodeableConceptDt.class.isAssignableFrom(originalField.getType())) {
-                        setFieldTypeGeneric(javaClass, originalField, field);
-                    } else if (BoundCodeDt.class.isAssignableFrom(originalField.getType())) {
-                        setFieldTypeGeneric(javaClass, originalField, field);
+                    if (BoundCodeableConceptDt.class.isAssignableFrom(inheritedField.getType())) {
+                        setFieldTypeGeneric(javaClass, inheritedField, field);
+                    } else if (BoundCodeDt.class.isAssignableFrom(inheritedField.getType())) {
+                        setFieldTypeGeneric(javaClass, inheritedField, field);
                     } else {
-                        field.setType(originalField.getType());
+                        field.setType(inheritedField.getType());
                     }
                 } else {
-                    field.setType(originalField.getType());
+                    field.setType(inheritedField.getType());
                 }
             } else {
-                field.setType(originalField.getType());
+                field.setType(inheritedField.getType());
             }
         }
 
-        List<Class> fieldType = FluentIterable.from(element.getType()).transform(new TypeClassFunction(originalField)).toList();
-        AnnotationSource<JavaClassSource> childAnnotation = addChildAnnotation(element, name, field);
+        List<Class> fieldType = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
+        AnnotationSource<JavaClassSource> childAnnotation = addChildAnnotation(element, elementName, field);
         childAnnotation.setClassArrayValue("type", fieldType.toArray(new Class[fieldType.size()]));
         addDescriptionAnnotation(element, field);
     }
@@ -172,13 +243,13 @@ public class Generator {
                 return;
             }
             FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(element.getName()));
-
+            fieldsAdded.add(field);
             Class extensionType = getExtensionType(element, resolver);
             if (extensionType != null) {
                 field.setType(extensionType);
             } else {
                 field.setType(Roaster.parse("public class " + StringUtils.capitalize(element.getName()) + " {}"));
-                String errMsg = "Replace " + StringUtils.capitalize(element.getName()) + ".class with correct extension type";
+                String errMsg = "Replace " + StringUtils.capitalize(element.getName()) + ".class with correct extension name";
                 field.getJavaDoc().addTagValue("TODO:", errMsg);
                 field.getJavaDoc().addTagValue("@deprecated", errMsg);
             }
@@ -195,10 +266,10 @@ public class Generator {
         StructureDefinition def = resolver.provideReferenceDefinition(element);
         for (ElementDefinitionDt el : def.getDifferential().getElement()) {
             if (el.getPath().equals("Extension.value[x]")) {
-                return getClassFromType(el.getTypeFirstRep(), null);
+                return getDSTU2ClassType(el.getTypeFirstRep());
             }
         }
-        throw new IllegalArgumentException("Could not find type for extension: " + element);
+        throw new IllegalArgumentException("Could not find name for extension: " + element);
     }
 
     private AnnotationSource<JavaClassSource> addChildAnnotation(ElementDefinitionDt element, String name, FieldSource<JavaClassSource> field) {
@@ -240,26 +311,26 @@ public class Generator {
     }
 
     private static Class getClassFromType(@Nullable ElementDefinitionDt.Type input, Field originalField) {
+        switch (input.getCode()) {
+            case "BackboneElement":
+                if (originalField.getGenericType() instanceof ParameterizedType) {
+                    return (Class) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
+                } else {
+                    return originalField.getType();
+                }
+            case "Reference":
+                return ResourceReferenceDt.class;
+            default:
+                return getDSTU2ClassType(input);
+        }
+    }
+
+    private static Class getDSTU2ClassType(@Nullable ElementDefinitionDt.Type input) {
         try {
-            switch (input.getCode()) {
-                case "Extension":
-                    return Extension.class;
-                case "BackboneElement":
-                    if (originalField.getGenericType() instanceof ParameterizedType) {
-                        return (Class) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
-                    } else {
-                        return originalField.getType();
-                    }
-                case "Reference":
-                    return ResourceReferenceDt.class;
-                default:
-                    Class cls;
-                    try {
-                        cls = Class.forName(DSTU2_PRIMITIVE_PACKAGE + "." + StringUtils.capitalize(input.getCode()) + "Dt");
-                    } catch (ClassNotFoundException ee) {
-                        cls = Class.forName(DSTU2_COMPOSITE_PACKAGE + "." + input.getCode() + "Dt");
-                    }
-                    return cls;
+            try {
+                return Class.forName(DSTU2_PRIMITIVE_PACKAGE + "." + StringUtils.capitalize(input.getCode()) + "Dt");
+            } catch (ClassNotFoundException ee) {
+                return Class.forName(DSTU2_COMPOSITE_PACKAGE + "." + input.getCode() + "Dt");
             }
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("Cannot locate class", e);
@@ -275,13 +346,36 @@ public class Generator {
     }
 
     private static class CompositeValue {
-        public String type;
-        public String url;
+        public String description;
+        public String path;
+        public List<CompositeValueField> fields = new ArrayList<>();
 
-        public CompositeValue(String type, String url) {
-            this.type = type;
-            this.url = url;
+        public CompositeValue(String path, String description) {
+            this.path = path;
+            this.description = description;
+        }
+
+        public List<CompositeValueField> getFields() {
+            return fields;
         }
     }
 
+    private static class CompositeValueField {
+        public String url;
+        public String name;
+        public String type;
+        public String fixedCode;
+
+        public CompositeValueField(String name) {
+            this.name = name;
+        }
+    }
+
+    private static class FieldSourceGetNameFunction implements Function<FieldSource<JavaClassSource>, String> {
+        @Nullable
+        @Override
+        public String apply(@Nullable FieldSource<JavaClassSource> input) {
+            return input.getName();
+        }
+    }
 }

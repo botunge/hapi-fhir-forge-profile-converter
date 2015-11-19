@@ -24,10 +24,9 @@ public class Main {
         Generator gen = new Generator();
         StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
                 "com.systematic.healthcare.fhir.generator.example",
-                new File("E:/FHIR/Cura General Assessments Profile.xml"));
+                new File("dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\FunctioningCondition.xml"));
         String javaClass = gen.convertDefinitionToJavaFile(provider);
-        System.out.println(javaClass);
-
-        Files.write(new File("C:\\Users\\tsa\\IdeaProjects\\Test\\dstu2\\src\\main\\java\\com\\systematic\\healthcare\\fhir\\generator\\example\\CuraGeneralAssessmentProfile.java").toPath(), javaClass.getBytes("UTF-8"));
+        Files.write(new File("dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\FunctioningCondition.java").toPath(), javaClass.getBytes("UTF-8"));
+        System.out.println("Complete");
     }
 }
