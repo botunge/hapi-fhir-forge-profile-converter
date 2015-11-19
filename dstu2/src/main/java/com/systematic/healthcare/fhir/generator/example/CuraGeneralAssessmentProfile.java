@@ -84,4 +84,8 @@ public class CuraGeneralAssessmentProfile extends Observation {
 	@Child(name = "component", min = 0, max = Child.MAX_UNLIMITED, order = Child.REPLACE_PARENT, summary = true, modifier = false, type = {})
 	@Description(shortDefinition = "Component results", formalDefinition = "Some observations have multiple component observations.  These component observations are expressed as separate code value pairs that share the same attributes.  Examples include systolic and diastolic component observations for blood pressure measurement and multiple component observations for genetics observations.")
 	List<Component> myComponent;
+
+	public enum ComponentresultsEnum {
+		COPING, MOTIVATION, RESOURCES, ROLES, HABITS, OCCUPATIONS, LIFEHISTORY, NETWORK, HEALTHINFORMATION, HEALTHCAREPROFESSIONALCONTACTS, AIDS, HOUSE, MULTISTORYBUILDING, NUMBEROFROOMS, PRIVATEPROPERTY, RENTEDHOUSE, HOUSINGCOORPERATIVE, OWNERORMANAGER, HERITAGEPROPERTY, PERMISSIONFORKEYBOX, ENTRYSUITABILITY, ENTRYCOMMENTS, INTERIORSTAIRCASE, EXTERIORSTAIRCASE, ELEVATOR, EXTERIORLEVELDIFFERENCES, KITCHENSUITABILITY, KITCHENCOMMENTS, GAS, ELECTRIC, LIVINGROOMSUITABILITY, LIVINGROOMCOMMENTS, BEDROOMSUITABILITY, BEDROOMCOMMENT, BATHROOMSUITABILITY, BATHROOMCOMMENT, TOILETPLACEMENT, BATHTUB, BATHTUBWITHSEAT, SHOWER, SINKWITHSHOWERHEAD, DRAIN
+	}
 }

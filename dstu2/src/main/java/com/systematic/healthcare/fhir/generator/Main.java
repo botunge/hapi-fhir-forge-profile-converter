@@ -27,6 +27,7 @@ public class Main {
                 new File("E:/FHIR/Cura General Assessments Profile.xml"));
         String javaClass = gen.convertDefinitionToJavaFile(provider);
         System.out.println(javaClass);
-        Files.write(new File(".\\example\\CuraGeneralAssessmentProfile.java").toPath(), javaClass.getBytes("UTF-8"));
+
+        Files.write(new File("C:\\Users\\tsa\\IdeaProjects\\Test\\dstu2\\src\\main\\java\\com\\systematic\\healthcare\\fhir\\generator\\example\\CuraGeneralAssessmentProfile.java").toPath(), javaClass.getBytes("UTF-8"));
     }
 }
