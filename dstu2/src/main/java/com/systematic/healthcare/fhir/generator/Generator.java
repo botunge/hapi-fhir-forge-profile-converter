@@ -126,7 +126,8 @@ public class Generator {
                     .setReturnType(javaClass.getName()).setBody(bodySet);
             methodSet.addParameter(type, "theValue");
             if (!isExtension) {
-                methodSet.addAnnotation(Override.class);
+                // TODO: add support for overrride
+                //methodSet.addAnnotation(Override.class);
             }
             AnnotationSource<JavaClassSource> childAnnotation = field.getAnnotation(Child.class);
             String min = childAnnotation.getStringValue("min");
