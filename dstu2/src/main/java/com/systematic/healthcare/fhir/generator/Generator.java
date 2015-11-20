@@ -33,6 +33,7 @@ import com.google.common.collect.ImmutableList;
 
 import org.apache.commons.lang3.StringUtils;
 import org.jboss.forge.roaster.Roaster;
+import org.jboss.forge.roaster._shade.org.eclipse.jdt.core.dom.Annotation;
 import org.jboss.forge.roaster.model.Type;
 import org.jboss.forge.roaster.model.source.*;
 
@@ -91,10 +92,10 @@ public class Generator {
     }
 
     private void addSettersAndGettersForFields(JavaClassSource javaClass) {
-        for (FieldSource<JavaClassSource> i : fieldsAdded) {
-            String fieldName = StringUtils.capitalize(i.getName().substring(2)); // Remove my
-            String type = i.getType().getName();
-            String genericTypes = Joiner.on(',').join(FluentIterable.from(i.getType().getTypeArguments()).transform(new Function<Type<JavaClassSource>, String>() {
+        for (FieldSource<JavaClassSource> field : fieldsAdded) {
+            String fieldName = StringUtils.capitalize(field.getName().substring(2)); // Remove my
+            String type = field.getType().getName();
+            String genericTypes = Joiner.on(',').join(FluentIterable.from(field.getType().getTypeArguments()).transform(new Function<Type<JavaClassSource>, String>() {
                 @Nullable
                 @Override
                 public String apply(@Nullable Type<JavaClassSource> input) {
@@ -105,10 +106,10 @@ public class Generator {
             if (getFieldName.equals("Comments")) {
                 getFieldName = "CommentsElement";
             }
-            String bodyGet = "return "+i.getName()+";";
-            if (i.getType().isType(List.class)) {
-                bodyGet = "if ("+i.getName()+" == null) {\n" +
-                        "   "+i.getName() +" = new java.util.ArrayList<>();\n" +
+            String bodyGet = "return "+field.getName()+";";
+            if (field.getType().isType(List.class)) {
+                bodyGet = "if ("+field.getName()+" == null) {\n" +
+                        "   "+field.getName() +" = new java.util.ArrayList<>();\n" +
                         "}\n" +
                         bodyGet;
 
@@ -117,11 +118,20 @@ public class Generator {
             MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get"+getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
             methodGet.addAnnotation(Override.class);
 
-            String bodySet = i.getName() + " = theValue;\nreturn this;";
+            String bodySet = field.getName() + " = theValue;\nreturn this;";
             MethodSource<JavaClassSource> methodSet = javaClass.addMethod().setName("set"+fieldName).setPublic()
                     .setReturnType(javaClass.getName()).setBody(bodySet);
             methodSet.addParameter(type, "theValue");
             methodSet.addAnnotation(Override.class);
+            AnnotationSource<JavaClassSource> childAnnotation = field.getAnnotation(Child.class);
+            String min = childAnnotation.getStringValue("min");
+            String max = childAnnotation.getStringValue("max");
+            if ("0".equals(min) && "0".equals(max)) {
+                field.addAnnotation(Deprecated.class);
+                methodGet.addAnnotation(Deprecated.class);
+                methodSet.addAnnotation(Deprecated.class);
+            }
+
         }
     }
 
@@ -189,7 +199,7 @@ public class Generator {
         }
 
         Field inheritedField = elementNameToInheritedField.get(elementName);
-        FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(elementName));
+        FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(elementName)).setPrivate();
         fieldsAdded.add(field);
         if (Collection.class.isAssignableFrom(inheritedField.getType())) {
             List<Class<?>> cl = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
@@ -245,7 +255,7 @@ public class Generator {
             if (element.getName() == null) {
                 return;
             }
-            FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(element.getName()));
+            FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(element.getName())).setPrivate();
             fieldsAdded.add(field);
             Class<?> extensionType = getExtensionType(element, resolver);
             if (extensionType != null) {

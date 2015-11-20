@@ -22,11 +22,12 @@ public class Main {
 
     public static void main(String [] args) throws Exception {
         Generator gen = new Generator();
+        String directory = "dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\";
         StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
                 "com.systematic.healthcare.fhir.generator",
-                new File("dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\FunctioningCondition.xml"));
+                new File(directory, "FunctioningCondition.xml"));
         String javaClass = gen.convertDefinitionToJavaFile(provider);
-        Files.write(new File("dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\FunctioningCondition.java").toPath(), javaClass.getBytes("UTF-8"));
-        System.out.println("Complete");
+        Files.write(new File(directory, "FunctioningCondition.java").toPath(), javaClass.getBytes("UTF-8"));
+        System.out.println("Success");
     }
 }
