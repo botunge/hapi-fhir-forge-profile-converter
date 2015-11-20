@@ -37,11 +37,11 @@ import org.jboss.forge.roaster.model.source.*;
 import javax.annotation.Nullable;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.util.*;
 
-import static org.reflections.ReflectionUtils.getAllFields;
-import static org.reflections.ReflectionUtils.withAnnotation;
+import static org.reflections.ReflectionUtils.*;
 
 public class Generator {
 
@@ -54,11 +54,10 @@ public class Generator {
     public JavaClassSource convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
         StructureDefinition def = resolver.getDefinition();
         final JavaClassSource javaClass = Roaster.create(JavaClassSource.class);
-        Class<?> classType = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
-        javaClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(def.getName())).extendSuperType(classType);
+        Class<?> superClass = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
+        javaClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(def.getName())).extendSuperType(superClass);
         addClassResourceDefAnnotation(def, javaClass);
-
-        Set<Field> fields = getAllFields(classType, withAnnotation(Child.class));
+        Set<Field> fields = getAllFields(superClass, withAnnotation(Child.class));
         Map<String, Field> nameToField = new HashMap<>();
         for (Field f : fields) {
             Child annotation = f.getAnnotation(Child.class);
@@ -86,12 +85,12 @@ public class Generator {
         allFields.addAll(existingFieldsChanged);
         allFields.addAll(extensionFieldsAdded);
         addIsEmptyMethod(javaClass, allFields);
-        addSettersAndGettersForFields(javaClass, existingFieldsChanged, false);
-        addSettersAndGettersForFields(javaClass, extensionFieldsAdded, true);
+        addSettersAndGettersForFields(javaClass, existingFieldsChanged, false, superClass);
+        addSettersAndGettersForFields(javaClass, extensionFieldsAdded, true, superClass);
         return javaClass;
     }
 
-    private void addSettersAndGettersForFields(JavaClassSource javaClass, List<FieldSource<JavaClassSource>> fieldsAdded, boolean isExtension) {
+    private void addSettersAndGettersForFields(JavaClassSource javaClass, List<FieldSource<JavaClassSource>> fieldsAdded, boolean isExtension, Class<?> superClass) {
         for (FieldSource<JavaClassSource> field : fieldsAdded) {
             String fieldName = StringUtils.capitalize(field.getName().substring(2)); // Remove my
             String type = field.getType().getName();
@@ -103,6 +102,12 @@ public class Generator {
                 }
             }));
             String getFieldName = fieldName;
+
+            Set<Method> getMethods = getAllMethods(superClass,  withPattern(".*get("+fieldName+"\\(\\)||\"+fieldName+\"Element\\(\\))"));
+            for (Method i : getMethods) {
+                System.out.println(i.getName());
+            }
+
             String fieldTypeName = field.getType().getName();
             if (fieldTypeName.equals("DateDt") || fieldTypeName.equals("StringDt") || fieldTypeName.equals("BoundCodeDt") || fieldTypeName.equals("BoundCodeableConceptDt")) {
                 getFieldName = getFieldName + "Element";
@@ -117,6 +122,7 @@ public class Generator {
                 type = type + "<" + genericTypes + ">";
             }
             MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get" + getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
+
             if (!isExtension) {
                 // TODO: add support for overrride
                 //methodGet.addAnnotation(Override.class);
@@ -134,11 +140,9 @@ public class Generator {
             String max = childAnnotation.getStringValue("max");
             if ("0".equals(min) && "0".equals(max)) {
                 field.addAnnotation(Deprecated.class);
-                // TODO: add deprecation on getter and setter.
-                //methodGet.addAnnotation(Deprecated.class);
-                //methodSet.addAnnotation(Deprecated.class);
+                methodGet.addAnnotation(Deprecated.class);
+                methodSet.addAnnotation(Deprecated.class);
             }
-
         }
     }
 
@@ -157,7 +161,8 @@ public class Generator {
             enumClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(enumName) + "Type");
             for (CompositeValueField value : i.getValue().getFields()) {
                 enumClass.addEnumConstant().setName(convertNameToValidJavaIdentifier(value.name).toUpperCase());
-                System.out.println(value.fixedCode + " " + value.name + " " + value.type + " " + value.url);
+                // TODO: fix slicing
+                //System.out.println(value.fixedCode + " " + value.name + " " + value.type + " " + value.url);
             }
             javaClass.addNestedType(enumClass);
         }
@@ -342,6 +347,8 @@ public class Generator {
                     return originalField.getType();
                 }
             case "Reference":
+                // TODO: for Reference Fields the type should be The referenced type.
+                //return originalField.getType();
                 return ResourceReferenceDt.class;
             default:
                 return getDSTU2ClassType(input);
