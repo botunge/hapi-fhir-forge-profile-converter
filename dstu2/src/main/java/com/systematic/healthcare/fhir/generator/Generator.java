@@ -118,7 +118,8 @@ public class Generator {
             }
             MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get" + getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
             if (!isExtension) {
-                methodGet.addAnnotation(Override.class);
+                // TODO: add support for overrride
+                //methodGet.addAnnotation(Override.class);
             }
 
             String bodySet = field.getName() + " = theValue;\nreturn this;";
@@ -126,8 +127,7 @@ public class Generator {
                     .setReturnType(javaClass.getName()).setBody(bodySet);
             methodSet.addParameter(type, "theValue");
             if (!isExtension) {
-                // TODO: add support for overrride
-                //methodSet.addAnnotation(Override.class);
+                methodSet.addAnnotation(Override.class);
             }
             AnnotationSource<JavaClassSource> childAnnotation = field.getAnnotation(Child.class);
             String min = childAnnotation.getStringValue("min");
