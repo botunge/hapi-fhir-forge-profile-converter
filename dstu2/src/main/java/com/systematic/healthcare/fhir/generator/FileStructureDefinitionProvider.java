@@ -48,7 +48,7 @@ public class FileStructureDefinitionProvider implements StructureDefinitionProvi
     @Override
     public StructureDefinition provideReferenceDefinition(ElementDefinitionDt element) throws IOException {
         String fileStr = element.getTypeFirstRep().getProfileFirstRep().getValue().substring(element.getTypeFirstRep().getProfileFirstRep().getValue().lastIndexOf('/') + 1) + ".xml";
-        File file = new File("E:/FHIR/" + fileStr);
+        File file = new File(structureFile.getParent(), fileStr);
         if (!file.isFile()) {
             return null;
         }

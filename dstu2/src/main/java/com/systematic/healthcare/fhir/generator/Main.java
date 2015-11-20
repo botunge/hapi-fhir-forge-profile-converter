@@ -15,19 +15,25 @@
  */
 package com.systematic.healthcare.fhir.generator;
 
+import org.jboss.forge.roaster.model.source.JavaClassSource;
+
 import java.io.File;
 import java.nio.file.Files;
 
 public class Main {
 
     public static void main(String [] args) throws Exception {
-        Generator gen = new Generator();
         String directory = "dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\";
-        StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
-                "com.systematic.healthcare.fhir.generator",
-                new File(directory, "FunctioningCondition.xml"));
-        String javaClass = gen.convertDefinitionToJavaFile(provider);
-        Files.write(new File(directory, "FunctioningCondition.java").toPath(), javaClass.getBytes("UTF-8"));
+
+        for (String s : new String[] {"Cura General Assessments Profile", "CuraFunctioningCondition", "FunctioningCondition"}) {
+            Generator gen = new Generator();
+            StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
+                    "com.systematic.healthcare.fhir.generator.generated",
+                    new File(directory, s + ".xml"));
+            JavaClassSource javaClass = gen.convertDefinitionToJavaFile(provider);
+            new File(directory, "generated").mkdirs();
+            Files.write(new File(new File(directory, "generated"), javaClass.getName()+".java").toPath(), javaClass.toString().getBytes("UTF-8"));
+        }
         System.out.println("Success");
     }
 }

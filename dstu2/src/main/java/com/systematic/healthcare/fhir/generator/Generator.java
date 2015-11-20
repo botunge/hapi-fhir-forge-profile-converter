@@ -29,16 +29,12 @@ import ca.uhn.fhir.util.ElementUtil;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
-
 import org.apache.commons.lang3.StringUtils;
 import org.jboss.forge.roaster.Roaster;
-import org.jboss.forge.roaster._shade.org.eclipse.jdt.core.dom.Annotation;
 import org.jboss.forge.roaster.model.Type;
 import org.jboss.forge.roaster.model.source.*;
 
 import javax.annotation.Nullable;
-
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
@@ -55,7 +51,7 @@ public class Generator {
     private static final String DSTU2_PRIMITIVE_PACKAGE = "ca.uhn.fhir.model.primitive";
     public static final String HL7_FHIR_REFERENCE_URL_START = "http://hl7.org/fhir";
 
-    public String convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
+    public JavaClassSource convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
         StructureDefinition def = resolver.getDefinition();
         final JavaClassSource javaClass = Roaster.create(JavaClassSource.class);
         Class<?> classType = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
@@ -86,12 +82,16 @@ public class Generator {
             }
         }
         addSliceFields(resolver, javaClass);
-        addIsEmptyMethod(javaClass, fieldsAdded);
-        addSettersAndGettersForFields(javaClass);
-        return javaClass.toString();
+        List<FieldSource<JavaClassSource>> allFields = new ArrayList<>();
+        allFields.addAll(existingFieldsChanged);
+        allFields.addAll(extensionFieldsAdded);
+        addIsEmptyMethod(javaClass, allFields);
+        addSettersAndGettersForFields(javaClass, existingFieldsChanged, false);
+        addSettersAndGettersForFields(javaClass, extensionFieldsAdded, true);
+        return javaClass;
     }
 
-    private void addSettersAndGettersForFields(JavaClassSource javaClass) {
+    private void addSettersAndGettersForFields(JavaClassSource javaClass, List<FieldSource<JavaClassSource>> fieldsAdded, boolean isExtension) {
         for (FieldSource<JavaClassSource> field : fieldsAdded) {
             String fieldName = StringUtils.capitalize(field.getName().substring(2)); // Remove my
             String type = field.getType().getName();
@@ -103,33 +103,39 @@ public class Generator {
                 }
             }));
             String getFieldName = fieldName;
-            if (getFieldName.equals("Comments")) {
-                getFieldName = "CommentsElement";
+            String fieldTypeName = field.getType().getName();
+            if (fieldTypeName.equals("DateDt") || fieldTypeName.equals("StringDt") || fieldTypeName.equals("BoundCodeDt") || fieldTypeName.equals("BoundCodeableConceptDt")) {
+                getFieldName = getFieldName + "Element";
             }
-            String bodyGet = "return "+field.getName()+";";
+            String bodyGet = "return " + field.getName() + ";";
             if (field.getType().isType(List.class)) {
-                bodyGet = "if ("+field.getName()+" == null) {\n" +
-                        "   "+field.getName() +" = new java.util.ArrayList<>();\n" +
+                bodyGet = "if (" + field.getName() + " == null) {\n" +
+                        "   " + field.getName() + " = new java.util.ArrayList<>();\n" +
                         "}\n" +
                         bodyGet;
 
-                type = type + "<"+genericTypes+">";
+                type = type + "<" + genericTypes + ">";
             }
-            MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get"+getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
-            methodGet.addAnnotation(Override.class);
+            MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get" + getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
+            if (!isExtension) {
+                methodGet.addAnnotation(Override.class);
+            }
 
             String bodySet = field.getName() + " = theValue;\nreturn this;";
-            MethodSource<JavaClassSource> methodSet = javaClass.addMethod().setName("set"+fieldName).setPublic()
+            MethodSource<JavaClassSource> methodSet = javaClass.addMethod().setName("set" + fieldName).setPublic()
                     .setReturnType(javaClass.getName()).setBody(bodySet);
             methodSet.addParameter(type, "theValue");
-            methodSet.addAnnotation(Override.class);
+            if (!isExtension) {
+                methodSet.addAnnotation(Override.class);
+            }
             AnnotationSource<JavaClassSource> childAnnotation = field.getAnnotation(Child.class);
             String min = childAnnotation.getStringValue("min");
             String max = childAnnotation.getStringValue("max");
             if ("0".equals(min) && "0".equals(max)) {
                 field.addAnnotation(Deprecated.class);
-                methodGet.addAnnotation(Deprecated.class);
-                methodSet.addAnnotation(Deprecated.class);
+                // TODO: add deprecation on getter and setter.
+                //methodGet.addAnnotation(Deprecated.class);
+                //methodSet.addAnnotation(Deprecated.class);
             }
 
         }
@@ -169,7 +175,8 @@ public class Generator {
     private Map<String, CompositeValue> slicePathToValues = new HashMap<>();
     private CompositeValue lastSlicedValue = null;
     private CompositeValueField lastSlicedValueField = null;
-    private List<FieldSource<JavaClassSource>> fieldsAdded = new ArrayList<>();
+    private List<FieldSource<JavaClassSource>> existingFieldsChanged = new ArrayList<>();
+    private List<FieldSource<JavaClassSource>> extensionFieldsAdded = new ArrayList<>();
 
     private void addField(JavaClassSource javaClass, Map<String, Field> elementNameToInheritedField, ElementDefinitionDt element, String elementName) {
         if (!element.getSlicing().getDiscriminator().isEmpty()) {
@@ -200,7 +207,7 @@ public class Generator {
 
         Field inheritedField = elementNameToInheritedField.get(elementName);
         FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(elementName)).setPrivate();
-        fieldsAdded.add(field);
+        existingFieldsChanged.add(field);
         if (Collection.class.isAssignableFrom(inheritedField.getType())) {
             List<Class<?>> cl = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
             if (cl.size() == 0) {
@@ -229,7 +236,7 @@ public class Generator {
         }
 
         List<Class<?>> fieldType = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
-        AnnotationSource<JavaClassSource> childAnnotation = addChildAnnotation(element, elementName, field);
+        AnnotationSource<JavaClassSource> childAnnotation = addChildAnnotation(element, elementName, field, false);
         childAnnotation.setClassArrayValue("type", fieldType.toArray(new Class[fieldType.size()]));
         addDescriptionAnnotation(element, field);
     }
@@ -245,7 +252,9 @@ public class Generator {
     }
 
     private void addClassResourceDefAnnotation(StructureDefinition def, JavaClassSource javaClass) {
-        javaClass.addAnnotation(ResourceDef.class).setStringValue("name", def.getConstrainedType()).setStringValue("id", def.getName());
+        javaClass.addAnnotation(ResourceDef.class)
+                .setStringValue("name", def.getConstrainedType())
+                .setStringValue("id", def.getId().getIdPart());
     }
 
     private void addExtensionField(JavaClassSource javaClass, ElementDefinitionDt element, StructureDefinitionProvider resolver) throws Exception {
@@ -256,7 +265,7 @@ public class Generator {
                 return;
             }
             FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(element.getName())).setPrivate();
-            fieldsAdded.add(field);
+            extensionFieldsAdded.add(field);
             Class<?> extensionType = getExtensionType(element, resolver);
             if (extensionType != null) {
                 field.setType(extensionType);
@@ -270,7 +279,7 @@ public class Generator {
                     .setLiteralValue("definedLocally", "false")
                     .setLiteralValue("isModifier", "false")
                     .setStringValue("url", element.getTypeFirstRep().getProfileFirstRep().getValue());
-            addChildAnnotation(element, element.getName(), field);
+            addChildAnnotation(element, element.getName(), field, true);
             addDescriptionAnnotation(element, field);
         }
     }
@@ -285,12 +294,12 @@ public class Generator {
         throw new IllegalArgumentException("Could not find name for extension: " + element);
     }
 
-    private AnnotationSource<JavaClassSource> addChildAnnotation(ElementDefinitionDt element, String name, FieldSource<JavaClassSource> field) {
+    private AnnotationSource<JavaClassSource> addChildAnnotation(ElementDefinitionDt element, String name, FieldSource<JavaClassSource> field, boolean isExtension) {
         AnnotationSource<JavaClassSource> childAnnotation = field.addAnnotation(Child.class);
         childAnnotation.setStringValue("name", name);
         childAnnotation.setLiteralValue("min", element.getMin().toString());
         childAnnotation.setLiteralValue("max", "*".equals(element.getMax()) ? "Child.MAX_UNLIMITED" : element.getMax());
-        childAnnotation.setLiteralValue("order", "Child.REPLACE_PARENT");
+        childAnnotation.setLiteralValue("order", isExtension ? "Child.ORDER_UNKNOWN" : "Child.REPLACE_PARENT");
         childAnnotation.setLiteralValue("summary", element.getIsSummary() != null ? element.getIsSummary().toString() : "false");
         childAnnotation.setLiteralValue("modifier", element.getIsModifier() != null ? element.getIsModifier().toString() : "false");
 
