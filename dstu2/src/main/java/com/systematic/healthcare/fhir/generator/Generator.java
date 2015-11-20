@@ -29,12 +29,15 @@ import ca.uhn.fhir.util.ElementUtil;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.FluentIterable;
+import com.google.common.collect.ImmutableList;
+
 import org.apache.commons.lang3.StringUtils;
 import org.jboss.forge.roaster.Roaster;
 import org.jboss.forge.roaster.model.Type;
 import org.jboss.forge.roaster.model.source.*;
 
 import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.ParameterizedType;
@@ -54,7 +57,7 @@ public class Generator {
     public String convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
         StructureDefinition def = resolver.getDefinition();
         final JavaClassSource javaClass = Roaster.create(JavaClassSource.class);
-        Class classType = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
+        Class<?> classType = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
         javaClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(def.getName())).extendSuperType(classType);
         addClassResourceDefAnnotation(def, javaClass);
 
@@ -189,7 +192,7 @@ public class Generator {
         FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(elementName));
         fieldsAdded.add(field);
         if (Collection.class.isAssignableFrom(inheritedField.getType())) {
-            List<Class> cl = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
+            List<Class<?>> cl = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
             if (cl.size() == 0) {
                 setFieldTypeGeneric(javaClass, inheritedField, field);
             } else {
@@ -215,14 +218,14 @@ public class Generator {
             }
         }
 
-        List<Class> fieldType = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
+        List<Class<?>> fieldType = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
         AnnotationSource<JavaClassSource> childAnnotation = addChildAnnotation(element, elementName, field);
         childAnnotation.setClassArrayValue("type", fieldType.toArray(new Class[fieldType.size()]));
         addDescriptionAnnotation(element, field);
     }
 
     private void setFieldTypeGeneric(JavaClassSource javaClass, Field originalField, FieldSource<JavaClassSource> field) {
-        Class typeClass = (Class) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
+        Class<?> typeClass = (Class<?>) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
         field.setType(originalField.getType().getCanonicalName() + "<" + typeClass.getSimpleName() + ">");
         javaClass.addImport(typeClass);
     }
@@ -244,7 +247,7 @@ public class Generator {
             }
             FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(element.getName()));
             fieldsAdded.add(field);
-            Class extensionType = getExtensionType(element, resolver);
+            Class<?> extensionType = getExtensionType(element, resolver);
             if (extensionType != null) {
                 field.setType(extensionType);
             } else {
@@ -262,7 +265,7 @@ public class Generator {
         }
     }
 
-    private Class getExtensionType(ElementDefinitionDt element, StructureDefinitionProvider resolver) throws IOException {
+    private Class<?> getExtensionType(ElementDefinitionDt element, StructureDefinitionProvider resolver) throws IOException {
         StructureDefinition def = resolver.provideReferenceDefinition(element);
         for (ElementDefinitionDt el : def.getDifferential().getElement()) {
             if (el.getPath().equals("Extension.value[x]")) {
@@ -295,7 +298,7 @@ public class Generator {
 
     }
 
-    private static class TypeClassFunction implements Function<ElementDefinitionDt.Type, Class> {
+    private static class TypeClassFunction implements Function<ElementDefinitionDt.Type, Class<?>> {
 
         private Field field;
 
@@ -305,16 +308,16 @@ public class Generator {
 
         @Nullable
         @Override
-        public Class apply(@Nullable ElementDefinitionDt.Type input) {
+        public Class<?> apply(@Nullable ElementDefinitionDt.Type input) {
             return getClassFromType(input, field);
         }
     }
 
-    private static Class getClassFromType(@Nullable ElementDefinitionDt.Type input, Field originalField) {
+    private static Class<?> getClassFromType(@Nullable ElementDefinitionDt.Type input, Field originalField) {
         switch (input.getCode()) {
             case "BackboneElement":
                 if (originalField.getGenericType() instanceof ParameterizedType) {
-                    return (Class) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
+                    return (Class<?>) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
                 } else {
                     return originalField.getType();
                 }
@@ -325,7 +328,7 @@ public class Generator {
         }
     }
 
-    private static Class getDSTU2ClassType(@Nullable ElementDefinitionDt.Type input) {
+    private static Class<?> getDSTU2ClassType(@Nullable ElementDefinitionDt.Type input) {
         try {
             try {
                 return Class.forName(DSTU2_PRIMITIVE_PACKAGE + "." + StringUtils.capitalize(input.getCode()) + "Dt");
@@ -337,10 +340,10 @@ public class Generator {
         }
     }
 
-    private static class ClassToSimpleNameFunction implements Function<Class, String> {
+    private static class ClassToSimpleNameFunction implements Function<Class<?>, String> {
         @Nullable
         @Override
-        public String apply(@Nullable Class input) {
+        public String apply(@Nullable Class<?> input) {
             return input.getSimpleName();
         }
     }
