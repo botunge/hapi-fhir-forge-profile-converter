@@ -1,2 +1,6 @@
-rootProject.name = 'HapiFhirForgeProfileConverter'
+rootProject.name = 'StructureDefinitionToHapiFhirJava'
+include 'gradle-plugin'
+// Cannot include example untill something is available in a repo
+//include 'gradle-plugin-example'
+include 'dstu2'
 

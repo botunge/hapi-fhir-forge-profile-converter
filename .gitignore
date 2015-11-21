@@ -1,9 +1,9 @@
 /gradle/**
 /.idea/**
 /.gradle/**
-/build/**
-*.iml
-*.class
+**/build/**
+/repo/**
+**/*.iml
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/

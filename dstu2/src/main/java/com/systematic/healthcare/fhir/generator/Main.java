@@ -25,12 +25,11 @@ public class Main {
     public static void main(String [] args) throws Exception {
         String directory = "dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\";
 
-        for (String s : new String[] {"Cura General Assessments Profile", "CuraFunctioningCondition", "FunctioningCondition"}) {
-            Generator gen = new Generator();
+        for (String s : new String[] {"FunctioningCondition"}) {
             StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
                     "com.systematic.healthcare.fhir.generator.generated",
                     new File(directory, s + ".xml"));
-            JavaClassSource javaClass = gen.convertDefinitionToJavaFile(provider);
+            JavaClassSource javaClass = Generator.generate(provider);
             new File(directory, "generated").mkdirs();
             Files.write(new File(new File(directory, "generated"), javaClass.getName()+".java").toPath(), javaClass.toString().getBytes("UTF-8"));
         }

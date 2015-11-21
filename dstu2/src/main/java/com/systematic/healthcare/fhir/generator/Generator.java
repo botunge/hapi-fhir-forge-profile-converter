@@ -51,7 +51,11 @@ public class Generator {
     private static final String DSTU2_PRIMITIVE_PACKAGE = "ca.uhn.fhir.model.primitive";
     public static final String HL7_FHIR_REFERENCE_URL_START = "http://hl7.org/fhir";
 
-    public JavaClassSource convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
+    public static JavaClassSource generate(StructureDefinitionProvider resolver) throws Exception {
+        return new Generator().convertDefinitionToJavaFile(resolver);
+    }
+
+    private JavaClassSource convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
         StructureDefinition def = resolver.getDefinition();
         final JavaClassSource javaClass = Roaster.create(JavaClassSource.class);
         Class<?> superClass = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());

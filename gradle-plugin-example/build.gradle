@@ -1,0 +1,28 @@
+apply from: '../artifact.gradle'
+apply plugin: 'java'
+
+sourceCompatibility = 1.5
+buildscript {
+    repositories {
+        mavenCentral()
+        maven {
+            url uri('../repo')
+        }
+    }
+    dependencies {
+        classpath 'com.systematic.healthcare:gradle-plugin:1.0-SNAPSHOT'
+    }
+}
+apply plugin: 'sdToJava'
+
+sdToJavaArg {
+    outDirectory = "$buildDir/generated-resources/main/java"
+    files = project.fileTree("testdata").include("*.xml")
+    packageName = "com.systematic.healthcare.fhir.generator.generated"
+}
+
+build.dependsOn sdToJavaTask
+
+dependencies {
+    //testCompile group: 'junit', name: 'junit'
+}
