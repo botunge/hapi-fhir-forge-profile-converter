@@ -15,23 +15,29 @@
  */
 package com.systematic.healthcare.fhir.generator;
 
-import org.jboss.forge.roaster.model.source.JavaClassSource;
-
 import java.io.File;
 import java.nio.file.Files;
 
+import org.jboss.forge.roaster.model.source.JavaClassSource;
+
 public class Main {
 
-    public static void main(String [] args) throws Exception {
-        String directory = "dstu2\\src\\test\\java\\com\\systematic\\healthcare\\fhir\\generator\\";
 
-        for (String s : new String[] {"FunctioningCondition"}) {
+	public static void main(String [] args) throws Exception {
+		String someOutputPackageName = "com.systematic.healthcare.fhir.generator.generated";
+		String [] fileNames = {"FunctioningCondition.xml"};
+		
+		String someReadingDirectory = new File(".").getAbsolutePath() + "\\src\\test\\resources";
+		String someWritingDirectory = new File(".").getAbsolutePath() + "\\src\\test\\java\\" + someOutputPackageName.replaceAll("\\.", "/");
+		new File(someWritingDirectory).mkdirs();
+		
+
+        for (String s : fileNames) {
             StructureDefinitionProvider provider = new FileStructureDefinitionProvider(
-                    "com.systematic.healthcare.fhir.generator.generated",
-                    new File(directory, s + ".xml"));
+                    someOutputPackageName,
+                    new File(someReadingDirectory, s));
             JavaClassSource javaClass = Generator.generate(provider);
-            new File(directory, "generated").mkdirs();
-            Files.write(new File(new File(directory, "generated"), javaClass.getName()+".java").toPath(), javaClass.toString().getBytes("UTF-8"));
+            Files.write(new File(new File(someWritingDirectory), javaClass.getName()+".java").toPath(), javaClass.toString().getBytes("UTF-8"));
         }
         System.out.println("Success");
     }
