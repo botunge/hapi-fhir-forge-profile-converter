@@ -1,2 +1,2 @@
-group 'com.systematic.healthcare'
-version '1.0-SNAPSHOT'
+group 'com.systematic.healthcare.fhir.generator'
+version '0.1'

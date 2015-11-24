@@ -10,7 +10,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'com.systematic.healthcare:gradle-plugin:1.0-SNAPSHOT'
+        classpath 'com.systematic.healthcare.fhir.generator:gradle-plugin:0.1'
     }
 }
 apply plugin: 'sdToJava'

@@ -1,9 +1,52 @@
 apply plugin: 'maven'
+apply plugin: "maven-publish"
 
-uploadArchives {
-    repositories {
-        mavenDeployer {
-            repository(url: uri('../repo'))
+def pomConfig = {
+    licenses {
+        license {
+            name "The Apache Software License, Version 2.0"
+            url "http://www.apache.org/licenses/LICENSE-2.0.txt"
+            distribution "repo"
+        }
+    }
+}
+
+
+publishing {
+    publications {
+        mavenJavaArtifacts(MavenPublication) {
+            from components.java
+            //artifact sourcesJar
+            //artifact javadocJar
+
+            pom.withXml {
+                def root = asNode()
+                root.appendNode('description', 'FHIR StructureDefinition to HAPI FHIR java converter')
+                root.children().last() + pomConfig
+            }
+        }
+    }
+}
+
+bintray {
+    user = System.getenv('BINTRAY_USER')
+    key = System.getenv('BINTRAY_KEY')
+    dryRun = false
+    publish = true
+    publications = ['mavenJavaArtifacts']
+    pkg {
+        repo = 'maven'
+        name = project.name
+        desc = "Package used for converting between FHIR StructureDefinition and Hapi FHIR DSTU2 resources"
+        licenses = ['Apache-2.0']
+        websiteUrl = 'https://github.com/botunge/hapi-fhir-forge-profile-converter'
+        vcsUrl = 'https://github.com/botunge/hapi-fhir-forge-profile-converter.git'
+        issueTrackerUrl = 'https://github.com/botunge/hapi-fhir-forge-profile-converter/issues'
+        version {
+            name = project.version
+            desc = "Gradle Plugin ${project.version}"
+            released  = new Date()
+            vcsTag = project.version
         }
     }
 }

@@ -1,4 +1,2 @@
-apply from: 'artifact.gradle'
-
 apply plugin: 'groovy'
 apply plugin: 'java'

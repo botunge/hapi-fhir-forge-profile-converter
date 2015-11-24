@@ -1,7 +1,12 @@
+plugins {
+    id "com.jfrog.bintray" version "1.4"
+}
+
 apply from: '../artifact.gradle'
 
 apply plugin: 'groovy'
 apply plugin: 'java'
+apply plugin: 'maven'
 
 sourceCompatibility = 1.7
 

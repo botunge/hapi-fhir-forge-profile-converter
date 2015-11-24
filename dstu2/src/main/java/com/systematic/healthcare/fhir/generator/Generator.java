@@ -177,7 +177,7 @@ public class Generator {
         for (String part : enumName.split("[ ]")) {
             b.append(StringUtils.capitalize(part));
         }
-        return enumName.replaceAll("[ \\.\\?]", "");
+        return b.toString().replaceAll("[ \\.\\?]", "");
     }
 
     private Set<String> sliced = new HashSet<>();
@@ -227,7 +227,7 @@ public class Generator {
                 field.setType(inheritedField.getType().getCanonicalName() + "<" + args + ">");
             }
         } else {
-            if (element.getBinding() != null && isStrengthNotExample(element.getBinding()) && element.getBinding().getValueSet() instanceof ResourceReferenceDt) {
+            if (element.getBinding() != null && isBindingStrengthNotExample(element.getBinding()) && element.getBinding().getValueSet() instanceof ResourceReferenceDt) {
                 ResourceReferenceDt ref = (ResourceReferenceDt) element.getBinding().getValueSet();
                 if (ref.getReference().getValue().startsWith(HL7_FHIR_REFERENCE_URL_START)) {
                     if (BoundCodeableConceptDt.class.isAssignableFrom(inheritedField.getType())) {
@@ -246,9 +246,9 @@ public class Generator {
         }
 
         List<Class<?>> fieldType = FluentIterable.from(element.getType()).transform(new TypeClassFunction(inheritedField)).toList();
-        AnnotationSource<JavaClassSource> childAnnotation = addChildAnnotation(element, elementName, field, false);
+        AnnotationSource<JavaClassSource> childAnnotation = addFieldChildAnnotation(element, elementName, field, false);
         childAnnotation.setClassArrayValue("type", fieldType.toArray(new Class[fieldType.size()]));
-        addDescriptionAnnotation(element, field);
+        addFieldDescriptionAnnotation(element, field);
     }
 
     private void setFieldTypeGeneric(JavaClassSource javaClass, Field originalField, FieldSource<JavaClassSource> field) {
@@ -257,7 +257,7 @@ public class Generator {
         javaClass.addImport(typeClass);
     }
 
-    private boolean isStrengthNotExample(ElementDefinitionDt.Binding binding) {
+    private boolean isBindingStrengthNotExample(ElementDefinitionDt.Binding binding) {
         return binding.getStrength() == null || !binding.getStrength().equals("example");
     }
 
@@ -282,16 +282,24 @@ public class Generator {
             } else {
                 field.setType(Roaster.parse("public class " + StringUtils.capitalize(element.getName()) + " {}"));
                 String errMsg = "Replace " + StringUtils.capitalize(element.getName()) + ".class with correct extension name";
-                field.getJavaDoc().addTagValue("TODO:", errMsg);
-                field.getJavaDoc().addTagValue("@deprecated", errMsg);
+                addTodoAndDeprecationAnnotation(field, errMsg);
             }
-            field.addAnnotation(Extension.class)
-                    .setLiteralValue("definedLocally", "false")
-                    .setLiteralValue("isModifier", "false")
-                    .setStringValue("url", element.getTypeFirstRep().getProfileFirstRep().getValue());
-            addChildAnnotation(element, element.getName(), field, true);
-            addDescriptionAnnotation(element, field);
+            addFieldExtensionAnnotation(element, field);
+            addFieldChildAnnotation(element, element.getName(), field, true);
+            addFieldDescriptionAnnotation(element, field);
         }
+    }
+
+    private void addFieldExtensionAnnotation(ElementDefinitionDt element, FieldSource<JavaClassSource> field) {
+        field.addAnnotation(Extension.class)
+                .setLiteralValue("definedLocally", "false")
+                .setLiteralValue("isModifier", "false")
+                .setStringValue("url", element.getTypeFirstRep().getProfileFirstRep().getValue());
+    }
+
+    private void addTodoAndDeprecationAnnotation(FieldSource<JavaClassSource> field, String errMsg) {
+        field.getJavaDoc().addTagValue("TODO:", errMsg);
+        field.getJavaDoc().addTagValue("@deprecated", errMsg);
     }
 
     private Class<?> getExtensionType(ElementDefinitionDt element, StructureDefinitionProvider resolver) throws IOException {
@@ -304,7 +312,7 @@ public class Generator {
         throw new IllegalArgumentException("Could not find name for extension: " + element);
     }
 
-    private AnnotationSource<JavaClassSource> addChildAnnotation(ElementDefinitionDt element, String name, FieldSource<JavaClassSource> field, boolean isExtension) {
+    private AnnotationSource<JavaClassSource> addFieldChildAnnotation(ElementDefinitionDt element, String name, FieldSource<JavaClassSource> field, boolean isExtension) {
         AnnotationSource<JavaClassSource> childAnnotation = field.addAnnotation(Child.class);
         childAnnotation.setStringValue("name", name);
         childAnnotation.setLiteralValue("min", element.getMin().toString());
@@ -316,7 +324,7 @@ public class Generator {
         return childAnnotation;
     }
 
-    private void addDescriptionAnnotation(ElementDefinitionDt element, FieldSource<JavaClassSource> field) {
+    private void addFieldDescriptionAnnotation(ElementDefinitionDt element, FieldSource<JavaClassSource> field) {
         AnnotationSource<JavaClassSource> descriptionAnnotation = field.addAnnotation(Description.class);
         if (element.getShort() != null) {
             descriptionAnnotation.setStringValue("shortDefinition", element.getShort());
