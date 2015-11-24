@@ -39,3 +39,4 @@ build.dependsOn sdToJavaTask
 
 ### Status
 [![Build Status](https://travis-ci.org/botunge/hapi-fhir-forge-profile-converter.png)](https://travis-ci.org/botunge/hapi-fhir-forge-profile-converter)
+[![Dependency Status](https://www.versioneye.com/user/projects/565431d9ff016c003a000916/badge.svg?style=flat)](https://www.versioneye.com/user/projects/565431d9ff016c003a000916)
