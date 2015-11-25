@@ -1,3 +1,4 @@
+apply plugin: 'java'
 apply plugin: 'maven'
 apply plugin: "maven-publish"
 
@@ -11,13 +12,22 @@ def pomConfig = {
     }
 }
 
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+task javadocJar(type: Jar, dependsOn: javadoc) {
+    classifier = 'javadoc'
+    from javadoc.destinationDir
+}
 
 publishing {
     publications {
         mavenJavaArtifacts(MavenPublication) {
             from components.java
-            //artifact sourcesJar
-            //artifact javadocJar
+            artifact sourcesJar
+            artifact javadocJar
 
             pom.withXml {
                 def root = asNode()
@@ -27,6 +37,8 @@ publishing {
         }
     }
 }
+
+//https://www.jfrog.com/confluence/display/RTF/Deploying+Snapshots+to+oss.jfrog.org
 
 bintray {
     user = System.getenv('BINTRAY_USER')
@@ -45,7 +57,7 @@ bintray {
         version {
             name = project.version
             desc = "Gradle Plugin ${project.version}"
-            released  = new Date()
+            released  = new java.util.Date()
             vcsTag = project.version
         }
     }

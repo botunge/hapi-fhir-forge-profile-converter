@@ -1,2 +1,2 @@
 group 'com.systematic.healthcare.fhir.generator'
-version '0.1'
+version = (System.getProperty('VERSION') == null ? '1.0-SNAPSHOT' : System.getProperty('VERSION'))
