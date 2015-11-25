@@ -57,7 +57,6 @@ bintray {
         version {
             name = project.version
             desc = "Gradle Plugin ${project.version}"
-            released  = new java.util.Date()
             vcsTag = project.version
         }
     }
