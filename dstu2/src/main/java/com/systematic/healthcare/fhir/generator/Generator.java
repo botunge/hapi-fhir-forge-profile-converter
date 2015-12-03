@@ -137,7 +137,7 @@ public class Generator {
                         if (deprecate) {
                             methodSet.addAnnotation(Deprecated.class);
                         }
-                    } else if (method.getName().startsWith("add") && method.getParameterCount() == 0) {
+                    } else if (method.getName().startsWith("add") && method.getParameters().length == 0) {
                         String body = simpleType + " newType = new "+simpleType+"();\n" +
                                 "    get"+existingField.getOrigFieldName()+"().add(newType);\n" +
                                 "return newType;";
