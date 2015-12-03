@@ -27,8 +27,8 @@ public class Main {
 		String someOutputPackageName = "com.systematic.healthcare.fhir.generator.generated";
 		String [] fileNames = {"FunctioningCondition.xml"};
 		
-		String someReadingDirectory = new File(".").getAbsolutePath() + "\\src\\test\\resources";
-		String someWritingDirectory = new File(".").getAbsolutePath() + "\\src\\test\\java\\" + someOutputPackageName.replaceAll("\\.", "/");
+		String someReadingDirectory = new File(".").getAbsolutePath() + "\\dstu2\\src\\test\\resources";
+		String someWritingDirectory = new File(".").getAbsolutePath() + "\\dstu2\\src\\test\\java\\" + someOutputPackageName.replaceAll("\\.", "/");
 		new File(someWritingDirectory).mkdirs();
 		
 

@@ -15,6 +15,8 @@
  */
 package com.systematic.healthcare.fhir.generator;
 
+import ca.uhn.fhir.model.api.IDatatype;
+import ca.uhn.fhir.model.api.IResource;
 import ca.uhn.fhir.model.api.annotation.Child;
 import ca.uhn.fhir.model.api.annotation.Description;
 import ca.uhn.fhir.model.api.annotation.Extension;
@@ -31,17 +33,13 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.FluentIterable;
 import org.apache.commons.lang3.StringUtils;
 import org.jboss.forge.roaster.Roaster;
-import org.jboss.forge.roaster.model.Type;
 import org.jboss.forge.roaster.model.source.*;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.util.*;
-
-import static org.reflections.ReflectionUtils.*;
 
 public class Generator {
 
@@ -58,15 +56,10 @@ public class Generator {
     private JavaClassSource convertDefinitionToJavaFile(StructureDefinitionProvider resolver) throws Exception {
         StructureDefinition def = resolver.getDefinition();
         final JavaClassSource javaClass = Roaster.create(JavaClassSource.class);
-        Class<?> superClass = Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
+        Class<? extends IResource> superClass = (Class<? extends IResource>) Class.forName(DSTU2_RESOURCE_PACKAGE + "." + def.getConstrainedType());
         javaClass.setPackage(resolver.getOutPackage()).setName(convertNameToValidJavaIdentifier(def.getName())).extendSuperType(superClass);
         addClassResourceDefAnnotation(def, javaClass);
-        Set<Field> fields = getAllFields(superClass, withAnnotation(Child.class));
-        Map<String, Field> nameToField = new HashMap<>();
-        for (Field f : fields) {
-            Child annotation = f.getAnnotation(Child.class);
-            nameToField.put(annotation.name(), f);
-        }
+        Map<String, ResourceParser.FieldInfo> fieldInfo = new ResourceParser().parseResource(superClass);
 
         StructureDefinition.Differential dif = def.getDifferential();
         List<ElementDefinitionDt> elements = dif.getElement();
@@ -80,7 +73,7 @@ public class Generator {
                 if (elementName.equals("extension")) {
                     addExtensionField(javaClass, element, resolver);
                 } else {
-                    addField(javaClass, nameToField, element, elementName);
+                    addField(javaClass, fieldInfo, element, elementName);
                 }
             }
         }
@@ -89,64 +82,78 @@ public class Generator {
         allFields.addAll(existingFieldsChanged);
         allFields.addAll(extensionFieldsAdded);
         addIsEmptyMethod(javaClass, allFields);
-        addSettersAndGettersForFields(javaClass, existingFieldsChanged, false, superClass);
-        addSettersAndGettersForFields(javaClass, extensionFieldsAdded, true, superClass);
+        addSettersAndGettersForFields(javaClass, existingFieldsChanged, false, superClass, fieldInfo);
+        addSettersAndGettersForFields(javaClass, extensionFieldsAdded, true, superClass, fieldInfo);
         return javaClass;
     }
 
-    private void addSettersAndGettersForFields(JavaClassSource javaClass, List<FieldSource<JavaClassSource>> fieldsAdded, boolean isExtension, Class<?> superClass) {
+    private void addSettersAndGettersForFields(JavaClassSource javaClass, List<FieldSource<JavaClassSource>> fieldsAdded, boolean isExtension, Class<?> superClass, Map<String, ResourceParser.FieldInfo> fieldInfo) {
         for (FieldSource<JavaClassSource> field : fieldsAdded) {
             String fieldName = StringUtils.capitalize(field.getName().substring(2)); // Remove my
+            ResourceParser.FieldInfo existingField = fieldInfo.get(fieldName.toLowerCase());
+            String genericType = null;
+            if (field.getType().getTypeArguments().size() == 1) {
+                genericType = field.getType().getTypeArguments().get(0).getName();
+            } else if (field.getType().getTypeArguments().size() > 1){
+                genericType = IDatatype.class.getName();
+            }
             String type = field.getType().getName();
-            String genericTypes = Joiner.on(',').join(FluentIterable.from(field.getType().getTypeArguments()).transform(new Function<Type<JavaClassSource>, String>() {
-                @Nullable
-                @Override
-                public String apply(@Nullable Type<JavaClassSource> input) {
-                    return input.getName();
-                }
-            }));
-            String getFieldName = fieldName;
-
-            Set<Method> getMethods = getAllMethods(superClass,  withPattern(".*get("+fieldName+"\\(\\)||\"+fieldName+\"Element\\(\\))"));
-            for (Method i : getMethods) {
-                System.out.println(i.getName());
-            }
-
-            String fieldTypeName = field.getType().getName();
-            if (fieldTypeName.equals("DateDt") || fieldTypeName.equals("StringDt") || fieldTypeName.equals("BoundCodeDt") || fieldTypeName.equals("BoundCodeableConceptDt")) {
-                getFieldName = getFieldName + "Element";
-            }
-            String bodyGet = "return " + field.getName() + ";";
+            String bodyGetSimple = "return " + field.getName() + ";";
             if (field.getType().isType(List.class)) {
-                bodyGet = "if (" + field.getName() + " == null) {\n" +
+                bodyGetSimple = "if (" + field.getName() + " == null) {\n" +
                         "   " + field.getName() + " = new java.util.ArrayList<>();\n" +
                         "}\n" +
-                        bodyGet;
+                        bodyGetSimple;
 
-                type = type + "<" + genericTypes + ">";
-            }
-            MethodSource<JavaClassSource> methodGet = javaClass.addMethod().setName("get" + getFieldName).setPublic().setReturnType(type).setBody(bodyGet);
-
-            if (!isExtension) {
-                // TODO: add support for overrride
-                //methodGet.addAnnotation(Override.class);
-            }
-
-            String bodySet = field.getName() + " = theValue;\nreturn this;";
-            MethodSource<JavaClassSource> methodSet = javaClass.addMethod().setName("set" + fieldName).setPublic()
-                    .setReturnType(javaClass.getName()).setBody(bodySet);
-            methodSet.addParameter(type, "theValue");
-            if (!isExtension) {
-                methodSet.addAnnotation(Override.class);
+                type = type + "<" + genericType + ">";
             }
             AnnotationSource<JavaClassSource> childAnnotation = field.getAnnotation(Child.class);
             String min = childAnnotation.getStringValue("min");
             String max = childAnnotation.getStringValue("max");
-            if ("0".equals(min) && "0".equals(max)) {
-                field.addAnnotation(Deprecated.class);
-                methodGet.addAnnotation(Deprecated.class);
-                methodSet.addAnnotation(Deprecated.class);
+            boolean deprecate = "0".equals(min) && "0".equals(max);
+            if (existingField != null) {
+                for (Method method : existingField.getMethods()) {
+                    String simpleType = genericType != null ? genericType : field.getType().getName();
+                    if (method.getName().startsWith("get") && method.getName().endsWith("FirstRep")) {
+                        String body = "if (get"+existingField.getOrigFieldName()+"().isEmpty()) {\n" +
+                                "    return add"+existingField.getOrigFieldName()+"();\n" +
+                                "}\n" +
+                                "return get"+existingField.getOrigFieldName()+"().get(0);";
+                        addGetMethod(javaClass, method.getName(), simpleType, body, deprecate);
+                    } else if (method.getName().startsWith("get") && method.getName().endsWith("Element")) {
+                        String body = "if ("+field.getName()+" == null) {\n" +
+                                "     "+field.getName()+" = new "+type+"();\n" +
+                                "    \n" +
+                                "return "+field.getName()+";";
+                        addGetMethod(javaClass, method.getName(), type, body, deprecate);
+                    } else if (method.getName().startsWith("get")) {
+                        addGetMethod(javaClass, method.getName(), type, bodyGetSimple, deprecate);
+                    } else if (method.getName().startsWith("set")) {
+                        String bodySet = field.getName() + " = theValue;\nreturn this;";
+                        MethodSource<JavaClassSource> methodSet = javaClass.addMethod().setName("set" + fieldName).setPublic()
+                                .setReturnType(javaClass.getName()).setBody(bodySet);
+                        methodSet.addParameter(type, "theValue");
+                        methodSet.addAnnotation(Override.class);
+                        if (deprecate) {
+                            methodSet.addAnnotation(Deprecated.class);
+                        }
+                    } else if (method.getName().startsWith("add") && method.getParameterCount() == 0) {
+                        String body = simpleType + " newType = new "+simpleType+"();\n" +
+                                "    get"+existingField.getOrigFieldName()+"().add(newType);\n" +
+                                "return newType;";
+                        addGetMethod(javaClass, method.getName(), simpleType, body, deprecate);
+                    }
+                }
+                continue;
             }
+            //Extensions and slicing
+        }
+    }
+
+    private void addGetMethod(JavaClassSource javaClass, String methodName, String type, String body, boolean deprecate) {
+        MethodSource<JavaClassSource> method = javaClass.addMethod().setName(methodName).setPublic().setReturnType(type).setBody(body);
+        if (deprecate) {
+            method.addAnnotation(Deprecated.class);
         }
     }
 
@@ -188,7 +195,7 @@ public class Generator {
     private List<FieldSource<JavaClassSource>> existingFieldsChanged = new ArrayList<>();
     private List<FieldSource<JavaClassSource>> extensionFieldsAdded = new ArrayList<>();
 
-    private void addField(JavaClassSource javaClass, Map<String, Field> elementNameToInheritedField, ElementDefinitionDt element, String elementName) {
+    private void addField(JavaClassSource javaClass, Map<String, ResourceParser.FieldInfo> fieldInfo, ElementDefinitionDt element, String elementName) {
         if (!element.getSlicing().getDiscriminator().isEmpty()) {
             sliced.add(element.getPath());
             slicedPathToEnumType.put(element.getPath(), element.getShort());
@@ -215,7 +222,7 @@ public class Generator {
             }
         }
 
-        Field inheritedField = elementNameToInheritedField.get(elementName);
+        ResourceParser.FieldInfo inheritedField = fieldInfo.get(elementName.toLowerCase());
         FieldSource<JavaClassSource> field = javaClass.addField().setName("my" + StringUtils.capitalize(elementName)).setPrivate();
         existingFieldsChanged.add(field);
         if (Collection.class.isAssignableFrom(inheritedField.getType())) {
@@ -251,7 +258,7 @@ public class Generator {
         addFieldDescriptionAnnotation(element, field);
     }
 
-    private void setFieldTypeGeneric(JavaClassSource javaClass, Field originalField, FieldSource<JavaClassSource> field) {
+    private void setFieldTypeGeneric(JavaClassSource javaClass, ResourceParser.FieldInfo originalField, FieldSource<JavaClassSource> field) {
         Class<?> typeClass = (Class<?>) ((ParameterizedType) originalField.getGenericType()).getActualTypeArguments()[0];
         field.setType(originalField.getType().getCanonicalName() + "<" + typeClass.getSimpleName() + ">");
         javaClass.addImport(typeClass);
@@ -337,9 +344,9 @@ public class Generator {
 
     private static class TypeClassFunction implements Function<ElementDefinitionDt.Type, Class<?>> {
 
-        private Field field;
+        private ResourceParser.FieldInfo field;
 
-        public TypeClassFunction(Field field) {
+        public TypeClassFunction(ResourceParser.FieldInfo field) {
             this.field = field;
         }
 
@@ -350,7 +357,7 @@ public class Generator {
         }
     }
 
-    private static Class<?> getClassFromType(@Nullable ElementDefinitionDt.Type input, Field originalField) {
+    private static Class<?> getClassFromType(@Nullable ElementDefinitionDt.Type input, ResourceParser.FieldInfo originalField) {
         switch (input.getCode()) {
             case "BackboneElement":
                 if (originalField.getGenericType() instanceof ParameterizedType) {
